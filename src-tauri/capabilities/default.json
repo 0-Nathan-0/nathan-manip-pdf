@@ -1,7 +1,17 @@
 {
 	"$schema": "../gen/schemas/desktop-schema.json",
 	"identifier": "default",
-	"description": "enables the default permissions",
+	"description": "Production profile: read anywhere, write only to common output folders",
 	"windows": ["main"],
-	"permissions": ["core:default"]
+	"permissions": [
+		"core:default",
+		"dialog:default",
+
+		"fs:allow-read",
+		"fs:allow-stat",
+
+		"fs:allow-desktop-write-recursive",
+		"fs:allow-download-write-recursive",
+		"fs:allow-document-write-recursive"
+	]
 }
