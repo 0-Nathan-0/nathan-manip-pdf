@@ -7,6 +7,9 @@ node_modules
 .wrangler
 /.svelte-kit
 /build
+/coverage
+/src-tauri/target
+/src-tauri/gen/schemas
 
 # OS
 .DS_Store
