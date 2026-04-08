@@ -147,20 +147,20 @@
 		isSplitting = true;
 
 		try {
-			const { open } = await import('@tauri-apps/plugin-dialog');
-			const selected = await open({
-				directory: true,
-				multiple: false
+			const { save } = await import('@tauri-apps/plugin-dialog');
+			const outputPath = await save({
+				defaultPath: 'split-selected-pages.pdf',
+				filters: [{ name: 'PDF', extensions: ['pdf'] }]
 			});
 
-			if (!selected || Array.isArray(selected)) {
+			if (!outputPath) {
 				return;
 			}
 
 			const result = await invoke('split_pdfs', {
 				inputPath: files[0].path,
-				selected_pages: selectedPages,
-				outputDir: selected
+				selectedPages,
+				outputPath
 			});
 
 			operationStatus = (result as { message?: string }).message ?? 'Split terminé.';

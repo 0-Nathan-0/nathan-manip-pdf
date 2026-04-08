@@ -1,7 +1,6 @@
 use lopdf::{Document, Object, ObjectId};
 use serde::Serialize;
 use std::collections::BTreeMap;
-use std::path::Path;
 
 #[derive(Serialize)]
 struct PdfOperationResult {
@@ -181,7 +180,7 @@ fn merge_pdfs(
 fn split_pdfs(
     input_path: String,
     selected_pages: Vec<u32>,
-    output_dir: String,
+    output_path: String,
 ) -> Result<PdfOperationResult, String> {
     if selected_pages.is_empty() {
         return Err("No pages selected".to_string());
@@ -190,16 +189,6 @@ fn split_pdfs(
     let mut cleaned_pages = selected_pages.clone();
     cleaned_pages.sort_unstable();
     cleaned_pages.dedup();
-
-    let input = Path::new(&input_path);
-    let stem = input
-        .file_stem()
-        .and_then(|name| name.to_str())
-        .unwrap_or("split")
-        .to_string();
-
-    std::fs::create_dir_all(&output_dir)
-        .map_err(|err| format!("Failed to create output directory '{}': {}", output_dir, err))?;
 
     let source = Document::load(&input_path)
         .map_err(|err| format!("Failed to load PDF '{}': {}", input_path, err))?;
@@ -215,36 +204,31 @@ fn split_pdfs(
         }
     }
 
-    for page_number in &cleaned_pages {
-        let mut one_page_doc = source.clone();
+    let mut split_doc = source.clone();
+    let pages_to_delete: Vec<u32> = page_numbers
+        .iter()
+        .copied()
+        .filter(|n| !cleaned_pages.contains(n))
+        .collect();
 
-        let pages_to_delete: Vec<u32> = page_numbers
-            .iter()
-            .copied()
-            .filter(|n| n != page_number)
-            .collect();
+    split_doc.delete_pages(&pages_to_delete);
+    split_doc.prune_objects();
+    split_doc.renumber_objects();
+    split_doc.compress();
 
-        one_page_doc.delete_pages(&pages_to_delete);
-        one_page_doc.prune_objects();
-        one_page_doc.renumber_objects();
-        one_page_doc.compress();
-
-        let output_path =
-            Path::new(&output_dir).join(format!("{}_page_{:03}.pdf", stem, page_number));
-        one_page_doc
-            .save(&output_path)
-            .map_err(|err| format!("Failed to save split PDF '{}': {}", output_path.display(), err))?;
-    }
+    split_doc
+        .save(&output_path)
+        .map_err(|err| format!("Failed to save split PDF '{}': {}", output_path, err))?;
 
     Ok(PdfOperationResult {
         ok: true,
         message: format!(
-            "Successfully split '{}' into {} files in {}",
-            input_path,
+            "Successfully extracted {} pages from '{}' into '{}'",
             cleaned_pages.len(),
-            output_dir
+            input_path,
+            output_path
         ),
-        file_count: cleaned_pages.len(),
+        file_count: 1,
     })
 }
 
