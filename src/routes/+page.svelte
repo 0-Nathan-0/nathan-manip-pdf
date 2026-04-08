@@ -30,35 +30,46 @@
 	async function renderPagesForFile(file: PdfFile, pageNumbers: number[]) {
 		if (!browser) return;
 
-		const pdfjs = await import('pdfjs-dist');
-		const pdfWorker = await import('pdfjs-dist/build/pdf.worker.min.mjs?url');
-		const { readFile } = await import('@tauri-apps/plugin-fs');
-		pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker.default;
+		try {
+			const pdfjs = await import('pdfjs-dist');
+			const pdfWorker = await import('pdfjs-dist/build/pdf.worker.min.mjs?url');
+			const { readFile } = await import('@tauri-apps/plugin-fs');
+			pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker.default;
 
-		const fileData = await readFile(file.path);
-		const pdfData = fileData instanceof Uint8Array ? fileData : new Uint8Array(fileData);
-		const pdfDoc = await pdfjs.getDocument({ data: pdfData }).promise;
+			const fileData = await readFile(file.path);
+			const pdfData = fileData instanceof Uint8Array ? fileData : new Uint8Array(fileData);
+			const pdfDoc = await pdfjs.getDocument({ data: pdfData }).promise;
+			const nextThumbnails: Record<string, string> = {};
 
-		for (const pageNumber of pageNumbers) {
-			const page = await pdfDoc.getPage(pageNumber);
-			const canvas = document.createElement('canvas');
-			const context = canvas.getContext('2d');
-			if (!context) continue;
+			for (const pageNumber of pageNumbers) {
+				try {
+					const page = await pdfDoc.getPage(pageNumber);
+					const canvas = document.createElement('canvas');
+					const context = canvas.getContext('2d');
+					if (!context) continue;
 
-			const viewport = page.getViewport({ scale: 0.35 });
-			canvas.width = Math.floor(viewport.width);
-			canvas.height = Math.floor(viewport.height);
+					const viewport = page.getViewport({ scale: 0.35 });
+					canvas.width = Math.floor(viewport.width);
+					canvas.height = Math.floor(viewport.height);
 
-			await page.render({
-				canvasContext: context,
-				viewport,
-				canvas
-			}).promise;
+					await page.render({
+						canvasContext: context,
+						viewport,
+						canvas
+					}).promise;
+
+					nextThumbnails[thumbnailKey(file.id, pageNumber)] = canvas.toDataURL('image/png');
+				} catch (pageError) {
+					operationError = pageError instanceof Error ? pageError.message : String(pageError);
+				}
+			}
 
 			thumbnails = {
 				...thumbnails,
-				[thumbnailKey(file.id, pageNumber)]: canvas.toDataURL('image/png')
+				...nextThumbnails
 			};
+		} catch (error) {
+			operationError = error instanceof Error ? error.message : String(error);
 		}
 	}
 
@@ -74,7 +85,9 @@
 			return;
 		}
 
-		await Promise.all(currentFiles.map((file) => renderPagesForFile(file, [1])));
+		for (const file of currentFiles) {
+			await renderPagesForFile(file, [1]);
+		}
 	}
 
 	async function removeFile(id: string) {
