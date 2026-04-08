@@ -186,9 +186,13 @@ fn split_pdfs(
         return Err("No pages selected".to_string());
     }
 
-    let mut cleaned_pages = selected_pages.clone();
-    cleaned_pages.sort_unstable();
-    cleaned_pages.dedup();
+    let mut cleaned_pages: Vec<u32> = Vec::new();
+
+    for page in selected_pages {
+        if !cleaned_pages.contains(&page) {
+            cleaned_pages.push(page);
+        }
+    }
 
     let source = Document::load(&input_path)
         .map_err(|err| format!("Failed to load PDF '{}': {}", input_path, err))?;

@@ -11,27 +11,27 @@
 	};
 
 	let files = $state<PdfFile[]>([
-		{
-			id: '1',
-			name: 'contrat-client.pdf',
-			size: 248576,
-			path: 'C:/mock/contrat-client.pdf',
-			nbPages: 6
-		},
-		{
-			id: '2',
-			name: 'facture-avril.pdf',
-			size: 8990,
-			path: 'C:/mock/facture-avril.pdf',
-			nbPages: 2
-		},
-		{
-			id: '3',
-			name: 'rapport-annuel.pdf',
-			size: 1942104,
-			path: 'C:/mock/rapport-annuel.pdf',
-			nbPages: 18
-		}
+		// {
+		// 	id: '1',
+		// 	name: 'contrat-client.pdf',
+		// 	size: 248576,
+		// 	path: 'C:/mock/contrat-client.pdf',
+		// 	nbPages: 6
+		// },
+		// {
+		// 	id: '2',
+		// 	name: 'facture-avril.pdf',
+		// 	size: 8990,
+		// 	path: 'C:/mock/facture-avril.pdf',
+		// 	nbPages: 2
+		// },
+		// {
+		// 	id: '3',
+		// 	name: 'rapport-annuel.pdf',
+		// 	size: 1942104,
+		// 	path: 'C:/mock/rapport-annuel.pdf',
+		// 	nbPages: 18
+		// }
 	]);
 	let operationStatus = $state<string | null>(null);
 	let operationError = $state<string | null>(null);
@@ -41,28 +41,6 @@
 
 	function removeFile(id: string) {
 		files = files.filter((file) => file.id !== id);
-	}
-
-	function goDown(id: string) {
-		for (let i = 0; i < files.length - 1; i++) {
-			if (files[i].id === id) {
-				const tmp = files[i];
-				files[i] = files[i + 1];
-				files[i + 1] = tmp;
-				return;
-			}
-		}
-	}
-
-	function goUp(id: string) {
-		for (let i = 1; i < files.length; i++) {
-			if (files[i].id === id) {
-				const tmp = files[i];
-				files[i] = files[i - 1];
-				files[i - 1] = tmp;
-				return;
-			}
-		}
 	}
 
 	async function selectPdfFiles() {
@@ -178,17 +156,43 @@
 			selectedPages.push(pageNumber);
 		}
 	}
+
+	function movePage(pageNumber: number, direction: -1 | 1) {
+		const index = selectedPages.indexOf(pageNumber);
+		const targetIndex = index + direction;
+
+		if (index < 0 || targetIndex < 0 || targetIndex >= selectedPages.length) {
+			return;
+		}
+
+		const [page] = selectedPages.splice(index, 1);
+		selectedPages.splice(targetIndex, 0, page);
+		selectedPages = [...selectedPages];
+	}
+
+	function moveFile(id: string, direction: -1 | 1) {
+		const index = files.findIndex((file) => file.id === id);
+		const targetIndex = index + direction;
+		if (index < 0 || targetIndex < 0 || targetIndex >= files.length) {
+			return;
+		}
+		const [file] = files.splice(index, 1);
+		files.splice(targetIndex, 0, file);
+		files = [...files];
+	}
 </script>
 
 {#if files.length > 0}
 	<h1>Liste des fichiers PDF:</h1>
 
 	<button
+		type="button"
 		disabled={files.length < 2}
 		class="rounded border px-2 py-1 text-sm hover:bg-gray-100"
 		onclick={runMergePdfs}>{isMerging ? 'Fusion en cours...' : 'FUSION'}</button
 	>
 	<button
+		type="button"
 		disabled={files.length !== 1 || selectedPages.length === 0}
 		class="rounded border px-2 py-1 text-sm hover:bg-gray-100"
 		onclick={runSplitPdfs}>{isSplitting ? 'Split en cours...' : 'SPLIT'}</button
@@ -200,6 +204,39 @@
 
 	{#if operationError}
 		<p>{operationError}</p>
+	{/if}
+
+	{#if selectedPages.length > 0}
+		<h2>Ordre des pages sélectionnées</h2>
+		<ul>
+			{#each selectedPages as pageNumber, index (pageNumber)}
+				<li>
+					Page {pageNumber}
+					<button
+						type="button"
+						onclick={() => selectPage(pageNumber)}
+						class="rounded border px-2 py-1 text-sm hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+						>X</button
+					>
+					<button
+						type="button"
+						onclick={() => movePage(pageNumber, -1)}
+						hidden={index === 0}
+						class="rounded border px-2 py-1 text-sm hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+					>
+						UP
+					</button>
+					<button
+						type="button"
+						onclick={() => movePage(pageNumber, 1)}
+						hidden={index === selectedPages.length - 1}
+						class="rounded border px-2 py-1 text-sm hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+					>
+						DOWN
+					</button>
+				</li>
+			{/each}
+		</ul>
 	{/if}
 
 	<ul>
@@ -216,7 +253,7 @@
 				>
 				<button
 					type="button"
-					onclick={() => goUp(file.id)}
+					onclick={() => moveFile(file.id, -1)}
 					aria-label={`Monter ${file.name}`}
 					hidden={files[0]?.id === file.id}
 					class="rounded border px-2 py-1 text-sm hover:bg-gray-100"
@@ -225,7 +262,7 @@
 				>
 				<button
 					type="button"
-					onclick={() => goDown(file.id)}
+					onclick={() => moveFile(file.id, 1)}
 					aria-label={`Descendre ${file.name}`}
 					hidden={files[files.length - 1]?.id === file.id}
 					class="rounded border px-2 py-1 text-sm hover:bg-gray-100"
@@ -237,13 +274,16 @@
 						{#each Array.from({ length: file.nbPages }, (_, i) => i + 1) as pageNumber (pageNumber)}
 							<li>
 								Page {pageNumber}
+
 								{#if selectedPages.includes(pageNumber)}
 									<button
+										type="button"
 										class="rounded border px-2 py-1 text-sm hover:bg-gray-100"
 										onclick={() => selectPage(pageNumber)}>SELECTED</button
 									>
 								{:else}
 									<button
+										type="button"
 										class="rounded border px-2 py-1 text-sm hover:bg-gray-100"
 										onclick={() => selectPage(pageNumber)}>SELECT</button
 									>
@@ -259,6 +299,8 @@
 	<p>Aucun fichier pour le moment.</p>
 {/if}
 <p>Nb fichiers: {files.length}</p>
-<button class="rounded border px-2 py-1 text-sm hover:bg-gray-100" onclick={selectPdfFiles}
-	>AJOUTER PDF</button
+<button
+	type="button"
+	class="rounded border px-2 py-1 text-sm hover:bg-gray-100"
+	onclick={selectPdfFiles}>AJOUTER PDF</button
 >
