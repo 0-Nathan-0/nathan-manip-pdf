@@ -197,7 +197,8 @@ fn split_pdfs(
     let source = Document::load(&input_path)
         .map_err(|err| format!("Failed to load PDF '{}': {}", input_path, err))?;
 
-    let page_numbers: Vec<u32> = source.get_pages().keys().copied().collect();
+    let page_map = source.get_pages();
+    let page_numbers: Vec<u32> = page_map.keys().copied().collect();
     if page_numbers.is_empty() {
         return Err("The input PDF has no pages".to_string());
     }
@@ -211,7 +212,7 @@ fn split_pdfs(
     let selected_page_ids: Vec<ObjectId> = cleaned_pages
         .iter()
         .map(|page_number| {
-            page_numbers
+            page_map
                 .get(page_number)
                 .copied()
                 .ok_or_else(|| format!("Selected page {} does not exist in the PDF", page_number))
