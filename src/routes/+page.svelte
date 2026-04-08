@@ -21,48 +21,66 @@
 	let selectedPages = $state<Page[]>([]);
 	let isMerging = $state(false);
 	let isSplitting = $state(false);
-	let thumbnails = $state<Record<number, string>>({});
+	let thumbnails = $state<Record<string, string>>({});
 
-	async function renderThumbnail(filePath: string) {
+	function thumbnailKey(fileId: string, pageNumber: number) {
+		return `${fileId}:${pageNumber}`;
+	}
+
+	async function renderPagesForFile(file: PdfFile, pageNumbers: number[]) {
 		if (!browser) return;
 
 		const pdfjs = await import('pdfjs-dist');
 		const pdfWorker = await import('pdfjs-dist/build/pdf.worker.min.mjs?url');
 		const { readFile } = await import('@tauri-apps/plugin-fs');
 		pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker.default;
-		const fileData = await readFile(filePath);
+
+		const fileData = await readFile(file.path);
 		const pdfData = fileData instanceof Uint8Array ? fileData : new Uint8Array(fileData);
-
 		const pdfDoc = await pdfjs.getDocument({ data: pdfData }).promise;
-		const page = await pdfDoc.getPage(1);
 
-		const canvas = document.createElement('canvas');
-		const context = canvas.getContext('2d');
-		if (!context) return;
+		for (const pageNumber of pageNumbers) {
+			const page = await pdfDoc.getPage(pageNumber);
+			const canvas = document.createElement('canvas');
+			const context = canvas.getContext('2d');
+			if (!context) continue;
 
-		const viewport = page.getViewport({ scale: 0.35 });
-		canvas.width = Math.floor(viewport.width);
-		canvas.height = Math.floor(viewport.height);
+			const viewport = page.getViewport({ scale: 0.35 });
+			canvas.width = Math.floor(viewport.width);
+			canvas.height = Math.floor(viewport.height);
 
-		await page.render({
-			canvasContext: context,
-			viewport,
-			canvas
-		}).promise;
+			await page.render({
+				canvasContext: context,
+				viewport,
+				canvas
+			}).promise;
 
-		thumbnails = {
-			...thumbnails,
-			1: canvas.toDataURL('image/png')
-		};
+			thumbnails = {
+				...thumbnails,
+				[thumbnailKey(file.id, pageNumber)]: canvas.toDataURL('image/png')
+			};
+		}
+	}
+
+	async function refreshThumbnails(currentFiles: PdfFile[]) {
+		thumbnails = {};
+
+		if (currentFiles.length === 0) return;
+
+		if (currentFiles.length === 1) {
+			const file = currentFiles[0];
+			const pages = Array.from({ length: file.nbPages }, (_, i) => i + 1);
+			await renderPagesForFile(file, pages);
+			return;
+		}
+
+		await Promise.all(currentFiles.map((file) => renderPagesForFile(file, [1])));
 	}
 
 	async function removeFile(id: string) {
 		files = files.filter((file) => file.id !== id);
 		selectedPages = [];
-		if (files.length === 1) {
-			thumbnails = {};
-			await renderThumbnail(files[0].path);
-		}
+		await refreshThumbnails(files);
 	}
 
 	async function selectPdfFiles() {
@@ -103,11 +121,7 @@
 		);
 		files = [...files, ...uniqueNewFiles];
 		selectedPages = [];
-
-		if (files.length === 1) {
-			thumbnails = {};
-			await renderThumbnail(files[0].path);
-		}
+		await refreshThumbnails(files);
 	}
 
 	async function runMergePdfs() {
@@ -298,14 +312,21 @@
 				>
 					DOWN</button
 				>
+				{#if files.length > 1 && thumbnails[thumbnailKey(file.id, 1)]}
+					<img
+						src={thumbnails[thumbnailKey(file.id, 1)]}
+						alt={`Miniature page 1 - ${file.name}`}
+						class="mt-2 h-24 w-auto rounded border"
+					/>
+				{/if}
 				{#if files.length === 1}
 					<ul>
 						{#each Array.from({ length: file.nbPages }, (_, i) => i + 1) as pageNumber (pageNumber)}
 							<li>
 								Page {pageNumber}
-								{#if thumbnails[pageNumber]}
+								{#if thumbnails[thumbnailKey(file.id, pageNumber)]}
 									<img
-										src={thumbnails[pageNumber]}
+										src={thumbnails[thumbnailKey(file.id, pageNumber)]}
 										alt={`Miniature page ${pageNumber}`}
 										class="mt-2 h-24 w-auto rounded border"
 									/>
