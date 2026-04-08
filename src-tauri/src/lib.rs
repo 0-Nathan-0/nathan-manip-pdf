@@ -177,7 +177,7 @@ fn merge_pdfs(
 }
 
 #[tauri::command]
-fn split_pdfs(
+fn split_pdf(
     input_path: String,
     selected_pages: Vec<u32>,
     output_path: String,
@@ -279,7 +279,7 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![merge_pdfs, split_pdfs, get_pdf_page_count])
+        .invoke_handler(tauri::generate_handler![merge_pdfs, split_pdf, get_pdf_page_count])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

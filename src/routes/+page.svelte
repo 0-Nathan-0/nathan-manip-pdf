@@ -10,37 +10,59 @@
 		nbPages: number;
 	};
 
-	let files = $state<PdfFile[]>([
-		// {
-		// 	id: '1',
-		// 	name: 'contrat-client.pdf',
-		// 	size: 248576,
-		// 	path: 'C:/mock/contrat-client.pdf',
-		// 	nbPages: 6
-		// },
-		// {
-		// 	id: '2',
-		// 	name: 'facture-avril.pdf',
-		// 	size: 8990,
-		// 	path: 'C:/mock/facture-avril.pdf',
-		// 	nbPages: 2
-		// },
-		// {
-		// 	id: '3',
-		// 	name: 'rapport-annuel.pdf',
-		// 	size: 1942104,
-		// 	path: 'C:/mock/rapport-annuel.pdf',
-		// 	nbPages: 18
-		// }
-	]);
+	type Page = {
+		pageNumber: number;
+		rotation: number;
+	};
+
+	let files = $state<PdfFile[]>([]);
 	let operationStatus = $state<string | null>(null);
 	let operationError = $state<string | null>(null);
-	let selectedPages = $state<number[]>([]);
+	let selectedPages = $state<Page[]>([]);
 	let isMerging = $state(false);
 	let isSplitting = $state(false);
+	let thumbnails = $state<Record<number, string>>({});
 
-	function removeFile(id: string) {
+	async function renderThumbnail(filePath: string) {
+		if (!browser) return;
+
+		const pdfjs = await import('pdfjs-dist');
+		const pdfWorker = await import('pdfjs-dist/build/pdf.worker.min.mjs?url');
+		const { readFile } = await import('@tauri-apps/plugin-fs');
+		pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker.default;
+		const fileData = await readFile(filePath);
+		const pdfData = fileData instanceof Uint8Array ? fileData : new Uint8Array(fileData);
+
+		const pdfDoc = await pdfjs.getDocument({ data: pdfData }).promise;
+		const page = await pdfDoc.getPage(1);
+
+		const canvas = document.createElement('canvas');
+		const context = canvas.getContext('2d');
+		if (!context) return;
+
+		const viewport = page.getViewport({ scale: 0.35 });
+		canvas.width = Math.floor(viewport.width);
+		canvas.height = Math.floor(viewport.height);
+
+		await page.render({
+			canvasContext: context,
+			viewport,
+			canvas
+		}).promise;
+
+		thumbnails = {
+			...thumbnails,
+			1: canvas.toDataURL('image/png')
+		};
+	}
+
+	async function removeFile(id: string) {
 		files = files.filter((file) => file.id !== id);
+		selectedPages = [];
+		if (files.length === 1) {
+			thumbnails = {};
+			await renderThumbnail(files[0].path);
+		}
 	}
 
 	async function selectPdfFiles() {
@@ -81,6 +103,11 @@
 		);
 		files = [...files, ...uniqueNewFiles];
 		selectedPages = [];
+
+		if (files.length === 1) {
+			thumbnails = {};
+			await renderThumbnail(files[0].path);
+		}
 	}
 
 	async function runMergePdfs() {
@@ -116,7 +143,7 @@
 		}
 	}
 
-	async function runSplitPdfs() {
+	async function runSplitPdf() {
 		if (files.length !== 1 || isSplitting || selectedPages.length === 0) return;
 		if (!browser) return;
 
@@ -127,7 +154,7 @@
 		try {
 			const { save } = await import('@tauri-apps/plugin-dialog');
 			const outputPath = await save({
-				defaultPath: 'split-selected-pages.pdf',
+				defaultPath: 'splitted.pdf',
 				filters: [{ name: 'PDF', extensions: ['pdf'] }]
 			});
 
@@ -135,9 +162,9 @@
 				return;
 			}
 
-			const result = await invoke('split_pdfs', {
+			const result = await invoke('split_pdf', {
 				inputPath: files[0].path,
-				selectedPages,
+				selectedPages: selectedPages.map((page) => page.pageNumber),
 				outputPath
 			});
 
@@ -150,15 +177,17 @@
 	}
 
 	function selectPage(pageNumber: number) {
-		if (selectedPages.includes(pageNumber)) {
-			selectedPages = selectedPages.filter((page) => page !== pageNumber);
+		const alreadySelected = selectedPages.some((p) => p.pageNumber === pageNumber);
+
+		if (alreadySelected) {
+			selectedPages = selectedPages.filter((p) => p.pageNumber !== pageNumber);
 		} else {
-			selectedPages.push(pageNumber);
+			selectedPages = [...selectedPages, { pageNumber, rotation: 0 }];
 		}
 	}
 
 	function movePage(pageNumber: number, direction: -1 | 1) {
-		const index = selectedPages.indexOf(pageNumber);
+		const index = selectedPages.findIndex((p) => p.pageNumber === pageNumber);
 		const targetIndex = index + direction;
 
 		if (index < 0 || targetIndex < 0 || targetIndex >= selectedPages.length) {
@@ -195,7 +224,7 @@
 		type="button"
 		disabled={files.length !== 1 || selectedPages.length === 0}
 		class="rounded border px-2 py-1 text-sm hover:bg-gray-100"
-		onclick={runSplitPdfs}>{isSplitting ? 'Split en cours...' : 'SPLIT'}</button
+		onclick={runSplitPdf}>{isSplitting ? 'Split en cours...' : 'SPLIT'}</button
 	>
 
 	{#if operationStatus}
@@ -209,18 +238,18 @@
 	{#if selectedPages.length > 0}
 		<h2>Ordre des pages sélectionnées</h2>
 		<ul>
-			{#each selectedPages as pageNumber, index (pageNumber)}
+			{#each selectedPages as page, index (page.pageNumber)}
 				<li>
-					Page {pageNumber}
+					Page {page.pageNumber}
 					<button
 						type="button"
-						onclick={() => selectPage(pageNumber)}
+						onclick={() => selectPage(page.pageNumber)}
 						class="rounded border px-2 py-1 text-sm hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
 						>X</button
 					>
 					<button
 						type="button"
-						onclick={() => movePage(pageNumber, -1)}
+						onclick={() => movePage(page.pageNumber, -1)}
 						hidden={index === 0}
 						class="rounded border px-2 py-1 text-sm hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
 					>
@@ -228,7 +257,7 @@
 					</button>
 					<button
 						type="button"
-						onclick={() => movePage(pageNumber, 1)}
+						onclick={() => movePage(page.pageNumber, 1)}
 						hidden={index === selectedPages.length - 1}
 						class="rounded border px-2 py-1 text-sm hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
 					>
@@ -274,8 +303,15 @@
 						{#each Array.from({ length: file.nbPages }, (_, i) => i + 1) as pageNumber (pageNumber)}
 							<li>
 								Page {pageNumber}
+								{#if thumbnails[pageNumber]}
+									<img
+										src={thumbnails[pageNumber]}
+										alt={`Miniature page ${pageNumber}`}
+										class="mt-2 h-24 w-auto rounded border"
+									/>
+								{/if}
 
-								{#if selectedPages.includes(pageNumber)}
+								{#if selectedPages.some((p) => p.pageNumber === pageNumber)}
 									<button
 										type="button"
 										class="rounded border px-2 py-1 text-sm hover:bg-gray-100"
