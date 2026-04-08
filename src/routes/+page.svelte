@@ -10,9 +10,10 @@
 	};
 
 	let files = $state<PdfFile[]>([]);
-	let mergeStatus = $state<string | null>(null);
-	let mergeError = $state<string | null>(null);
+	let operationStatus = $state<string | null>(null);
+	let operationError = $state<string | null>(null);
 	let isMerging = $state(false);
+	let isSplitting = $state(false);
 
 	function removeFile(id: string) {
 		files = files.filter((file) => file.id !== id);
@@ -79,8 +80,8 @@
 		if (files.length < 2 || isMerging) return;
 		if (!browser) return;
 
-		mergeStatus = null;
-		mergeError = null;
+		operationStatus = null;
+		operationError = null;
 		isMerging = true;
 
 		try {
@@ -100,11 +101,43 @@
 				outputPath
 			});
 
-			mergeStatus = (result as { message?: string }).message ?? 'Fusion terminée.';
+			operationStatus = (result as { message?: string }).message ?? 'Fusion terminée.';
 		} catch (error) {
-			mergeError = error instanceof Error ? error.message : String(error);
+			operationError = error instanceof Error ? error.message : String(error);
 		} finally {
 			isMerging = false;
+		}
+	}
+
+	async function runSplitPdf() {
+		if (files.length !== 1 || isSplitting) return;
+		if (!browser) return;
+
+		operationStatus = null;
+		operationError = null;
+		isSplitting = true;
+
+		try {
+			const { open } = await import('@tauri-apps/plugin-dialog');
+			const selected = await open({
+				directory: true,
+				multiple: false
+			});
+
+			if (!selected || Array.isArray(selected)) {
+				return;
+			}
+
+			const result = await invoke('split_pdf', {
+				inputPath: files[0].path,
+				outputDir: selected
+			});
+
+			operationStatus = (result as { message?: string }).message ?? 'Split terminé.';
+		} catch (error) {
+			operationError = error instanceof Error ? error.message : String(error);
+		} finally {
+			isSplitting = false;
 		}
 	}
 </script>
@@ -117,13 +150,18 @@
 		class="rounded border px-2 py-1 text-sm hover:bg-gray-100"
 		onclick={runMergePdfs}>{isMerging ? 'Fusion en cours...' : 'FUSION'}</button
 	>
+	<button
+		disabled={files.length !== 1}
+		class="rounded border px-2 py-1 text-sm hover:bg-gray-100"
+		onclick={runSplitPdf}>{isSplitting ? 'Split en cours...' : 'SPLIT'}</button
+	>
 
-	{#if mergeStatus}
-		<p>{mergeStatus}</p>
+	{#if operationStatus}
+		<p>{operationStatus}</p>
 	{/if}
 
-	{#if mergeError}
-		<p>{mergeError}</p>
+	{#if operationError}
+		<p>{operationError}</p>
 	{/if}
 
 	<ul>
