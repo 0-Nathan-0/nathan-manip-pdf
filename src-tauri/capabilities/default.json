@@ -7,8 +7,7 @@
 		"core:default",
 		"dialog:default",
 
-		"fs:allow-read",
-		"fs:allow-read-all",
+		"fs:read-all",
 		"fs:allow-stat",
 
 		"fs:allow-desktop-write-recursive",
