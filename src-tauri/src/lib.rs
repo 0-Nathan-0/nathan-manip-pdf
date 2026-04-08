@@ -208,14 +208,41 @@ fn split_pdfs(
         }
     }
 
-    let mut split_doc = source.clone();
-    let pages_to_delete: Vec<u32> = page_numbers
+    let selected_page_ids: Vec<ObjectId> = cleaned_pages
         .iter()
-        .copied()
-        .filter(|n| !cleaned_pages.contains(n))
-        .collect();
+        .map(|page_number| {
+            page_numbers
+                .get(page_number)
+                .copied()
+                .ok_or_else(|| format!("Selected page {} does not exist in the PDF", page_number))
+        })
+        .collect::<Result<_, _>>()?;
 
-    split_doc.delete_pages(&pages_to_delete);
+    let mut split_doc = source.clone();
+
+    let pages_object_id = split_doc
+        .catalog()
+        .map_err(|err| format!("Failed to read PDF catalog: {}", err))?
+        .get(b"Pages")
+        .map_err(|err| format!("Failed to read Pages root: {}", err))?
+        .as_reference()
+        .map_err(|err| format!("Pages root is not a reference: {}", err))?;
+
+    {
+        let pages_dictionary = split_doc
+            .get_dictionary_mut(pages_object_id)
+            .map_err(|err| format!("Failed to update Pages root: {}", err))?;
+
+        pages_dictionary.set("Count", selected_page_ids.len() as u32);
+        pages_dictionary.set(
+            "Kids",
+            selected_page_ids
+                .into_iter()
+                .map(Object::Reference)
+                .collect::<Vec<_>>(),
+        );
+    }
+
     split_doc.prune_objects();
     split_doc.renumber_objects();
     split_doc.compress();
