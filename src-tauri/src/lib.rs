@@ -3,17 +3,17 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 
 #[derive(Serialize)]
-struct PipelineResponse {
+struct PdfOperationResult {
     ok: bool,
     message: String,
     file_count: usize,
 }
 
 #[tauri::command]
-fn test_merge_pipeline(
+fn merge_pdfs(
     input_paths: Vec<String>,
     output_path: String,
-) -> Result<PipelineResponse, String> {
+) -> Result<PdfOperationResult, String> {
     if input_paths.len() < 2 {
         return Err("At least 2 input files are required".to_string());
     }
@@ -140,7 +140,7 @@ fn test_merge_pipeline(
         .save(&output_path)
         .map_err(|err| format!("Failed to save merged PDF to '{}': {}", output_path, err))?;
 
-    Ok(PipelineResponse {
+    Ok(PdfOperationResult {
         ok: true,
         message: format!(
             "Successfully merged {} PDFs into {}",
@@ -166,7 +166,7 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![test_merge_pipeline])
+        .invoke_handler(tauri::generate_handler![merge_pdfs])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

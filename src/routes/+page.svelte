@@ -75,7 +75,7 @@
 		files = [...files, ...uniqueNewFiles];
 	}
 
-	async function runMergePipeline() {
+	async function runMergePdfs() {
 		if (files.length < 2 || isMerging) return;
 		if (!browser) return;
 
@@ -95,7 +95,7 @@
 			}
 
 			const inputPaths = files.map((file) => file.path);
-			const result = await invoke('test_merge_pipeline', {
+			const result = await invoke('merge_pdfs', {
 				inputPaths,
 				outputPath
 			});
@@ -115,7 +115,7 @@
 	<button
 		disabled={files.length < 2}
 		class="rounded border px-2 py-1 text-sm hover:bg-gray-100"
-		onclick={runMergePipeline}>{isMerging ? 'Fusion en cours...' : 'FUSION'}</button
+		onclick={runMergePdfs}>{isMerging ? 'Fusion en cours...' : 'FUSION'}</button
 	>
 
 	{#if mergeStatus}
