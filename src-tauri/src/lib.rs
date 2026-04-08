@@ -10,6 +10,31 @@ struct PdfOperationResult {
     file_count: usize,
 }
 
+#[derive(Serialize)]
+struct PdfPageCountResult {
+    ok: bool,
+    message: String,
+    page_count: usize,
+}
+
+#[tauri::command]
+fn get_pdf_page_count(input_path: String) -> Result<PdfPageCountResult, String> {
+    let doc = Document::load(&input_path)
+        .map_err(|err| format!("Failed to load PDF '{}': {}", input_path, err))?;
+
+    let page_count = doc.get_pages().len();
+
+    if page_count == 0 {
+        return Err("The input PDF has no pages".to_string());
+    }
+
+    Ok(PdfPageCountResult {
+        ok: true,
+        message: format!("Loaded '{}' with {} pages", input_path, page_count),
+        page_count,
+    })
+}
+
 #[tauri::command]
 fn merge_pdfs(
     input_paths: Vec<String>,
@@ -153,7 +178,19 @@ fn merge_pdfs(
 }
 
 #[tauri::command]
-fn split_pdfs(input_path: String, output_dir: String) -> Result<PdfOperationResult, String> {
+fn split_pdfs(
+    input_path: String,
+    selected_pages: Vec<u32>,
+    output_dir: String,
+) -> Result<PdfOperationResult, String> {
+    if selected_pages.is_empty() {
+        return Err("No pages selected".to_string());
+    }
+
+    let mut cleaned_pages = selected_pages.clone();
+    cleaned_pages.sort_unstable();
+    cleaned_pages.dedup();
+
     let input = Path::new(&input_path);
     let stem = input
         .file_stem()
@@ -172,7 +209,13 @@ fn split_pdfs(input_path: String, output_dir: String) -> Result<PdfOperationResu
         return Err("The input PDF has no pages".to_string());
     }
 
-    for page_number in &page_numbers {
+    for page in &cleaned_pages {
+        if !page_numbers.contains(page) {
+            return Err(format!("Selected page {} does not exist in the PDF", page));
+        }
+    }
+
+    for page_number in &cleaned_pages {
         let mut one_page_doc = source.clone();
 
         let pages_to_delete: Vec<u32> = page_numbers
@@ -186,7 +229,8 @@ fn split_pdfs(input_path: String, output_dir: String) -> Result<PdfOperationResu
         one_page_doc.renumber_objects();
         one_page_doc.compress();
 
-        let output_path = Path::new(&output_dir).join(format!("{}_page_{:03}.pdf", stem, page_number));
+        let output_path =
+            Path::new(&output_dir).join(format!("{}_page_{:03}.pdf", stem, page_number));
         one_page_doc
             .save(&output_path)
             .map_err(|err| format!("Failed to save split PDF '{}': {}", output_path.display(), err))?;
@@ -197,10 +241,10 @@ fn split_pdfs(input_path: String, output_dir: String) -> Result<PdfOperationResu
         message: format!(
             "Successfully split '{}' into {} files in {}",
             input_path,
-            page_numbers.len(),
+            cleaned_pages.len(),
             output_dir
         ),
-        file_count: page_numbers.len(),
+        file_count: cleaned_pages.len(),
     })
 }
 
@@ -219,7 +263,7 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![merge_pdfs, split_pdfs])
+        .invoke_handler(tauri::generate_handler![merge_pdfs, split_pdfs, get_pdf_page_count])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

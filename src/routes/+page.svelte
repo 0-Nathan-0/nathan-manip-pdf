@@ -7,11 +7,35 @@
 		name: string;
 		size: number; // en octets
 		path: string;
+		nbPages: number;
 	};
 
-	let files = $state<PdfFile[]>([]);
+	let files = $state<PdfFile[]>([
+		{
+			id: '1',
+			name: 'contrat-client.pdf',
+			size: 248576,
+			path: 'C:/mock/contrat-client.pdf',
+			nbPages: 6
+		},
+		{
+			id: '2',
+			name: 'facture-avril.pdf',
+			size: 8990,
+			path: 'C:/mock/facture-avril.pdf',
+			nbPages: 2
+		},
+		{
+			id: '3',
+			name: 'rapport-annuel.pdf',
+			size: 1942104,
+			path: 'C:/mock/rapport-annuel.pdf',
+			nbPages: 18
+		}
+	]);
 	let operationStatus = $state<string | null>(null);
 	let operationError = $state<string | null>(null);
+	let selectedPages = $state<number[]>([]);
 	let isMerging = $state(false);
 	let isSplitting = $state(false);
 
@@ -62,11 +86,15 @@
 
 				const fileInfo = await stat(path);
 				const size = typeof fileInfo.size === 'number' ? fileInfo.size : 0;
+				const nbPages = await invoke('get_pdf_page_count', { inputPath: path }).then(
+					(result) => (result as { page_count?: number }).page_count ?? 0
+				);
 				return {
 					id: crypto.randomUUID(),
 					name,
 					size,
-					path
+					path,
+					nbPages
 				};
 			})
 		);
@@ -74,6 +102,7 @@
 			(newFile) => !files.some((existingFile) => existingFile.path === newFile.path)
 		);
 		files = [...files, ...uniqueNewFiles];
+		selectedPages = [];
 	}
 
 	async function runMergePdfs() {
@@ -109,8 +138,8 @@
 		}
 	}
 
-	async function runSplitPdf() {
-		if (files.length !== 1 || isSplitting) return;
+	async function runSplitPdfs() {
+		if (files.length !== 1 || isSplitting || selectedPages.length === 0) return;
 		if (!browser) return;
 
 		operationStatus = null;
@@ -128,8 +157,9 @@
 				return;
 			}
 
-			const result = await invoke('split_pdf', {
+			const result = await invoke('split_pdfs', {
 				inputPath: files[0].path,
+				selected_pages: selectedPages,
 				outputDir: selected
 			});
 
@@ -138,6 +168,14 @@
 			operationError = error instanceof Error ? error.message : String(error);
 		} finally {
 			isSplitting = false;
+		}
+	}
+
+	function selectPage(pageNumber: number) {
+		if (selectedPages.includes(pageNumber)) {
+			selectedPages = selectedPages.filter((page) => page !== pageNumber);
+		} else {
+			selectedPages.push(pageNumber);
 		}
 	}
 </script>
@@ -151,9 +189,9 @@
 		onclick={runMergePdfs}>{isMerging ? 'Fusion en cours...' : 'FUSION'}</button
 	>
 	<button
-		disabled={files.length !== 1}
+		disabled={files.length !== 1 || selectedPages.length === 0}
 		class="rounded border px-2 py-1 text-sm hover:bg-gray-100"
-		onclick={runSplitPdf}>{isSplitting ? 'Split en cours...' : 'SPLIT'}</button
+		onclick={runSplitPdfs}>{isSplitting ? 'Split en cours...' : 'SPLIT'}</button
 	>
 
 	{#if operationStatus}
@@ -194,6 +232,26 @@
 				>
 					DOWN</button
 				>
+				{#if files.length === 1}
+					<ul>
+						{#each Array.from({ length: file.nbPages }, (_, i) => i + 1) as pageNumber (pageNumber)}
+							<li>
+								Page {pageNumber}
+								{#if selectedPages.includes(pageNumber)}
+									<button
+										class="rounded border px-2 py-1 text-sm hover:bg-gray-100"
+										onclick={() => selectPage(pageNumber)}>SELECTED</button
+									>
+								{:else}
+									<button
+										class="rounded border px-2 py-1 text-sm hover:bg-gray-100"
+										onclick={() => selectPage(pageNumber)}>SELECT</button
+									>
+								{/if}
+							</li>
+						{/each}
+					</ul>
+				{/if}
 			</li>
 		{/each}
 	</ul>
