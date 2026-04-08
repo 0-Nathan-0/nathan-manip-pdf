@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
+	import { invoke } from '@tauri-apps/api/core';
 
 	type PdfFile = {
 		id: string;
@@ -9,6 +10,9 @@
 	};
 
 	let files = $state<PdfFile[]>([]);
+	let mergeStatus = $state<string | null>(null);
+	let mergeError = $state<string | null>(null);
+	let isMerging = $state(false);
 
 	function removeFile(id: string) {
 		files = files.filter((file) => file.id !== id);
@@ -70,14 +74,57 @@
 		);
 		files = [...files, ...uniqueNewFiles];
 	}
+
+	async function runMergePipeline() {
+		if (files.length < 2 || isMerging) return;
+		if (!browser) return;
+
+		mergeStatus = null;
+		mergeError = null;
+		isMerging = true;
+
+		try {
+			const { save } = await import('@tauri-apps/plugin-dialog');
+			const outputPath = await save({
+				defaultPath: 'merged.pdf',
+				filters: [{ name: 'PDF', extensions: ['pdf'] }]
+			});
+
+			if (!outputPath) {
+				return;
+			}
+
+			const inputPaths = files.map((file) => file.path);
+			const result = await invoke('test_merge_pipeline', {
+				inputPaths,
+				outputPath
+			});
+
+			mergeStatus = (result as { message?: string }).message ?? 'Fusion terminée.';
+		} catch (error) {
+			mergeError = error instanceof Error ? error.message : String(error);
+		} finally {
+			isMerging = false;
+		}
+	}
 </script>
 
 {#if files.length > 0}
 	<h1>Liste des fichiers PDF:</h1>
 
-	<button disabled={files.length < 2} class="rounded border px-2 py-1 text-sm hover:bg-gray-100"
-		>FUSION</button
+	<button
+		disabled={files.length < 2}
+		class="rounded border px-2 py-1 text-sm hover:bg-gray-100"
+		onclick={runMergePipeline}>{isMerging ? 'Fusion en cours...' : 'FUSION'}</button
 	>
+
+	{#if mergeStatus}
+		<p>{mergeStatus}</p>
+	{/if}
+
+	{#if mergeError}
+		<p>{mergeError}</p>
+	{/if}
 
 	<ul>
 		{#each files as file (file.id)}
