@@ -18,34 +18,34 @@
 	};
 
 	let files = $state<PdfFile[]>([
-		{
-			id: crypto.randomUUID(),
-			name: 'contrat-client.pdf',
-			size: 248512,
-			path: 'mock://contrat-client.pdf',
-			nbPages: 3
-		},
-		{
-			id: crypto.randomUUID(),
-			name: 'facture-avril.pdf',
-			size: 104320,
-			path: 'mock://facture-avril.pdf',
-			nbPages: 1
-		},
-		{
-			id: crypto.randomUUID(),
-			name: 'presentation-projet.pdf',
-			size: 890112,
-			path: 'mock://presentation-projet.pdf',
-			nbPages: 8
-		},
-		{
-			id: crypto.randomUUID(),
-			name: 'rapport-2025.pdf',
-			size: 1520430,
-			path: 'mock://rapport-2025.pdf',
-			nbPages: 12
-		}
+		// {
+		// 	id: crypto.randomUUID(),
+		// 	name: 'contrat-client.pdf',
+		// 	size: 248512,
+		// 	path: 'mock://contrat-client.pdf',
+		// 	nbPages: 3
+		// },
+		// {
+		// 	id: crypto.randomUUID(),
+		// 	name: 'facture-avril.pdf',
+		// 	size: 104320,
+		// 	path: 'mock://facture-avril.pdf',
+		// 	nbPages: 1
+		// },
+		// {
+		// 	id: crypto.randomUUID(),
+		// 	name: 'presentation-projet.pdf',
+		// 	size: 890112,
+		// 	path: 'mock://presentation-projet.pdf',
+		// 	nbPages: 8
+		// },
+		// {
+		// 	id: crypto.randomUUID(),
+		// 	name: 'rapport-2025.pdf',
+		// 	size: 1520430,
+		// 	path: 'mock://rapport-2025.pdf',
+		// 	nbPages: 12
+		// }
 	]);
 	let operationStatus = $state<string | null>(null);
 	let operationError = $state<string | null>(null);
@@ -53,7 +53,7 @@
 	let isMerging = $state(false);
 	let isSplitting = $state(false);
 	let thumbnails = $state<Record<string, string>>({});
-	let isMock = $state(true);
+	let isMock = $state(false);
 
 	function thumbnailKey(fileId: string, pageNumber: number) {
 		return `${fileId}:${pageNumber}`;
@@ -516,13 +516,25 @@
 							</div>
 							<div class="flex flex-wrap gap-2">
 								{#if files.length === 1}
-									<button
-										type="button"
-										onclick={selectAllPages}
-										aria-label="Selectionner toutes les pages"
-										class="rounded-md border border-slate-300 px-2 py-1 text-sm font-medium text-slate-700 hover:cursor-pointer hover:bg-slate-100"
-										>Tout selectionner</button
-									>
+									{#if selectedPages.length === file.nbPages}
+										<button
+											type="button"
+											disabled
+											aria-label="Toutes les pages sont sélectionnées"
+											class="rounded-md border border-emerald-400 bg-emerald-50 px-2 py-1 text-sm font-medium text-emerald-700 cursor-not-allowed"
+										>
+											✓ Tout sélectionné
+										</button>
+									{:else}
+										<button
+											type="button"
+											onclick={selectAllPages}
+											aria-label="Sélectionner toutes les pages"
+											class="rounded-md border border-slate-300 px-2 py-1 text-sm font-medium text-slate-700 hover:cursor-pointer hover:bg-slate-100"
+										>
+											Tout sélectionner
+										</button>
+									{/if}
 								{/if}
 								<button
 									type="button"
