@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
 	import { invoke } from '@tauri-apps/api/core';
+	import { flip } from 'svelte/animate';
+	import { cubicOut } from 'svelte/easing';
 
 	type PdfFile = {
 		id: string;
@@ -16,34 +18,34 @@
 	};
 
 	let files = $state<PdfFile[]>([
-		// {
-		// 	id: crypto.randomUUID(),
-		// 	name: 'contrat-client.pdf',
-		// 	size: 248512,
-		// 	path: 'mock://contrat-client.pdf',
-		// 	nbPages: 3
-		// },
-		// {
-		// 	id: crypto.randomUUID(),
-		// 	name: 'facture-avril.pdf',
-		// 	size: 104320,
-		// 	path: 'mock://facture-avril.pdf',
-		// 	nbPages: 1
-		// },
-		// {
-		// 	id: crypto.randomUUID(),
-		// 	name: 'presentation-projet.pdf',
-		// 	size: 890112,
-		// 	path: 'mock://presentation-projet.pdf',
-		// 	nbPages: 8
-		// },
-		// {
-		// 	id: crypto.randomUUID(),
-		// 	name: 'rapport-2025.pdf',
-		// 	size: 1520430,
-		// 	path: 'mock://rapport-2025.pdf',
-		// 	nbPages: 12
-		// }
+		{
+			id: crypto.randomUUID(),
+			name: 'contrat-client.pdf',
+			size: 248512,
+			path: 'mock://contrat-client.pdf',
+			nbPages: 3
+		},
+		{
+			id: crypto.randomUUID(),
+			name: 'facture-avril.pdf',
+			size: 104320,
+			path: 'mock://facture-avril.pdf',
+			nbPages: 1
+		},
+		{
+			id: crypto.randomUUID(),
+			name: 'presentation-projet.pdf',
+			size: 890112,
+			path: 'mock://presentation-projet.pdf',
+			nbPages: 8
+		},
+		{
+			id: crypto.randomUUID(),
+			name: 'rapport-2025.pdf',
+			size: 1520430,
+			path: 'mock://rapport-2025.pdf',
+			nbPages: 12
+		}
 	]);
 	let operationStatus = $state<string | null>(null);
 	let operationError = $state<string | null>(null);
@@ -51,7 +53,7 @@
 	let isMerging = $state(false);
 	let isSplitting = $state(false);
 	let thumbnails = $state<Record<string, string>>({});
-	let isMock = $state(false);
+	let isMock = $state(true);
 
 	function thumbnailKey(fileId: string, pageNumber: number) {
 		return `${fileId}:${pageNumber}`;
@@ -223,10 +225,13 @@
 			});
 
 			operationStatus = (result as { message?: string }).message ?? 'Fusion terminée.';
+			clearOperationMessages();
 		} catch (error) {
 			operationError = error instanceof Error ? error.message : String(error);
+			clearOperationMessages();
 		} finally {
 			isMerging = false;
+			clearOperationMessages();
 		}
 	}
 
@@ -263,7 +268,15 @@
 			operationError = error instanceof Error ? error.message : String(error);
 		} finally {
 			isSplitting = false;
+			clearOperationMessages();
 		}
+	}
+
+	function clearOperationMessages() {
+		setTimeout(() => {
+			operationStatus = null;
+			operationError = null;
+		}, 4000);
 	}
 
 	function selectPage(pageNumber: number) {
@@ -274,6 +287,15 @@
 		} else {
 			selectedPages = [...selectedPages, { pageNumber, rotation: 0 }];
 		}
+	}
+
+	function selectAllPages() {
+		if (files.length === 0) return;
+		const allPageNumbers = Array.from({ length: files[0].nbPages }, (_, i) => i + 1);
+		const newPages = allPageNumbers
+			.filter((pageNum) => !selectedPages.some((p) => p.pageNumber === pageNum))
+			.map((pageNum) => ({ pageNumber: pageNum, rotation: 0 }));
+		selectedPages = [...selectedPages, ...newPages];
 	}
 
 	function movePage(pageNumber: number, direction: -1 | 1) {
@@ -313,165 +335,270 @@
 	function normalizeRotation(rotation: number) {
 		return ((rotation % 360) + 360) % 360;
 	}
+
+	function formatBytes(value: number) {
+		if (value <= 0) return '0 B';
+		if (value < 1024) return `${value} B`;
+		if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+		return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+	}
 </script>
 
-{#if files.length > 0}
-	<h1>Liste des fichiers PDF:</h1>
+<main class="mx-auto max-w-6xl space-y-6 p-6">
+	<header class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+		<div class="flex flex-wrap items-center justify-between gap-3">
+			<div>
+				<h1 class="text-xl font-semibold text-slate-900">Bienvenu sur NMPDF</h1>
+				<p class="text-sm text-slate-600">{files.length} fichier(s) chargé(s)</p>
+			</div>
+			<div class="flex flex-wrap gap-2">
+				<button
+					type="button"
+					class="rounded-md border border-green-600 bg-green-600 px-3 py-2 text-sm font-medium text-white transition hover:cursor-pointer hover:bg-green-700"
+					onclick={selectPdfFiles}
+				>
+					Ajouter PDF
+				</button>
+				<button
+					type="button"
+					disabled={files.length < 2}
+					class="rounded-md border border-blue-600 bg-blue-600 px-3 py-2 text-sm font-medium text-white transition hover:cursor-pointer hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+					onclick={runMergePdfs}
+				>
+					{isMerging ? 'Fusion en cours...' : 'Fusionner'}
+				</button>
+				<button
+					type="button"
+					disabled={files.length !== 1 || selectedPages.length === 0}
+					class="rounded-md border border-blue-600 bg-blue-600 px-3 py-2 text-sm font-medium text-white transition hover:cursor-pointer hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+					onclick={runSplitPdf}
+				>
+					{isSplitting ? 'Split en cours...' : 'Modifier le fichier'}
+				</button>
+			</div>
+		</div>
 
-	<button
-		type="button"
-		disabled={files.length < 2}
-		class="rounded border px-2 py-1 text-sm hover:bg-gray-100"
-		onclick={runMergePdfs}>{isMerging ? 'Fusion en cours...' : 'FUSION'}</button
-	>
-	<button
-		type="button"
-		disabled={files.length !== 1 || selectedPages.length === 0}
-		class="rounded border px-2 py-1 text-sm hover:bg-gray-100"
-		onclick={runSplitPdf}>{isSplitting ? 'Split en cours...' : 'SPLIT'}</button
-	>
+		{#if operationStatus}
+			<p
+				class="mt-3 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-700"
+			>
+				{operationStatus}
+			</p>
+		{/if}
 
-	{#if operationStatus}
-		<p class="text-red-600">{operationStatus}</p>
-	{/if}
+		{#if operationError}
+			<p class="mt-3 rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+				{operationError}
+			</p>
+		{/if}
+	</header>
 
-	{#if operationError}
-		<p class="text-red-600">{operationError}</p>
+	{#if files.length === 0}
+		<button
+			type="button"
+			onclick={selectPdfFiles}
+			class="w-full rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center hover:cursor-pointer hover:bg-slate-100"
+		>
+			<p class="text-slate-700">Aucun fichier chargé pour le moment.</p>
+		</button>
 	{/if}
 
 	{#if selectedPages.length > 0}
-		<h2>Ordre des pages sélectionnées</h2>
-		<ul>
-			{#each selectedPages as page, index (page.pageNumber)}
-				<li>
-					Page {page.pageNumber}
+		<section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+			<div class="mb-3 flex items-center justify-between">
+				<h2 class="text-lg font-semibold text-slate-900">Pages sélectionnées pour le split</h2>
+				<div class="flex items-center gap-3">
+					<p class="text-sm text-slate-600">{selectedPages.length} page(s)</p>
 					<button
 						type="button"
-						onclick={() => selectPage(page.pageNumber)}
-						class="rounded border px-2 py-1 text-sm hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
-						>X</button
+						onclick={() => (selectedPages = [])}
+						aria-label="Tout déselectionner"
+						class="rounded-md border border-slate-300 px-2 py-1 text-sm font-medium text-slate-700 hover:cursor-pointer hover:bg-slate-100"
 					>
-					<button
-						type="button"
-						onclick={() => movePage(page.pageNumber, -1)}
-						hidden={index === 0}
-						class="rounded border px-2 py-1 text-sm hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
-					>
-						UP
+						Tout déselectionner
 					</button>
-					<button
-						type="button"
-						onclick={() => movePage(page.pageNumber, 1)}
-						hidden={index === selectedPages.length - 1}
-						class="rounded border px-2 py-1 text-sm hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+				</div>
+			</div>
+			<ul class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+				{#each selectedPages as page, index (page.pageNumber)}
+					<li
+						animate:flip={{ duration: 220, easing: cubicOut }}
+						class="rounded-xl border border-slate-200 p-3"
 					>
-						DOWN
-					</button>
-					<button
-						type="button"
-						onclick={() => rotatePage(page.pageNumber, 90)}
-						class="rounded border px-2 py-1 text-sm hover:bg-gray-100">RIGHT</button
-					>
-					<button
-						type="button"
-						onclick={() => rotatePage(page.pageNumber, -90)}
-						class="rounded border px-2 py-1 text-sm hover:bg-gray-100">LEFT</button
-					>
-					{#if thumbnails[thumbnailKey(files[0].id, page.pageNumber)]}
-						<div
-							class="mt-2 flex h-28 w-24 items-center justify-center overflow-hidden rounded border bg-white"
-						>
-							<img
-								src={thumbnails[thumbnailKey(files[0].id, page.pageNumber)]}
-								alt={'Miniature page ' + page.pageNumber}
-								class="h-24 w-auto rounded border"
-								style:transform={'rotate(' + page.rotation + 'deg)'}
-								style:transform-origin="center center"
-								style:transition="transform 180ms ease"
-							/>
+						<div class="mb-2 flex items-center justify-between">
+							<p class="text-sm font-semibold text-slate-800">
+								Page {page.pageNumber} - {normalizeRotation(page.rotation)}°
+							</p>
+							<button
+								type="button"
+								onclick={() => selectPage(page.pageNumber)}
+								class="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:cursor-pointer hover:bg-slate-100"
+							>
+								Retirer
+							</button>
 						</div>
-					{/if}
-				</li>
-			{/each}
-		</ul>
+						<div class="mb-3 flex flex-wrap gap-2">
+							<button
+								type="button"
+								onclick={() => movePage(page.pageNumber, -1)}
+								aria-label={`Déplacer la page ${page.pageNumber} vers la gauche`}
+								hidden={index === 0}
+								class="rounded-md border border-slate-300 px-2 py-1 text-sm font-medium text-slate-700 hover:cursor-pointer hover:bg-slate-100"
+							>
+								&larr;
+							</button>
+							<button
+								type="button"
+								onclick={() => movePage(page.pageNumber, 1)}
+								aria-label={`Déplacer la page ${page.pageNumber} vers la droite`}
+								hidden={index === selectedPages.length - 1}
+								class="rounded-md border border-slate-300 px-2 py-1 text-sm font-medium text-slate-700 hover:cursor-pointer hover:bg-slate-100"
+							>
+								&rarr;
+							</button>
+							<button
+								type="button"
+								onclick={() => rotatePage(page.pageNumber, -90)}
+								aria-label={`Tourner la page ${page.pageNumber} vers la gauche`}
+								class="rounded-md border border-slate-300 px-2 py-1 text-sm font-medium text-slate-700 hover:cursor-pointer hover:bg-slate-100"
+							>
+								↺
+							</button>
+							<button
+								type="button"
+								onclick={() => rotatePage(page.pageNumber, 90)}
+								aria-label={`Tourner la page ${page.pageNumber} vers la droite`}
+								class="rounded-md border border-slate-300 px-2 py-1 text-sm font-medium text-slate-700 hover:cursor-pointer hover:bg-slate-100"
+							>
+								↻
+							</button>
+						</div>
+						{#if files.length === 1 && thumbnails[thumbnailKey(files[0].id, page.pageNumber)]}
+							<div
+								class="flex h-36 w-full items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50"
+							>
+								<img
+									src={thumbnails[thumbnailKey(files[0].id, page.pageNumber)]}
+									alt={'Miniature page ' + page.pageNumber}
+									class="h-28 w-auto rounded border border-slate-200"
+									style:transform={'rotate(' + page.rotation + 'deg)'}
+									style:transform-origin="center center"
+									style:transition="transform 180ms ease"
+								/>
+							</div>
+						{/if}
+					</li>
+				{/each}
+			</ul>
+		</section>
 	{/if}
 
-	<ul>
-		{#each files as file (file.id)}
-			<li>
-				<strong>{file.name}</strong> - {file.size} Octets
-				<button
-					type="button"
-					onclick={() => removeFile(file.id)}
-					aria-label={`Supprimer ${file.name}`}
-					class="rounded border px-2 py-1 text-sm hover:bg-gray-100"
-				>
-					X</button
-				>
-				<button
-					type="button"
-					onclick={() => moveFile(file.id, -1)}
-					aria-label={`Monter ${file.name}`}
-					hidden={files[0]?.id === file.id}
-					class="rounded border px-2 py-1 text-sm hover:bg-gray-100"
-				>
-					UP</button
-				>
-				<button
-					type="button"
-					onclick={() => moveFile(file.id, 1)}
-					aria-label={`Descendre ${file.name}`}
-					hidden={files[files.length - 1]?.id === file.id}
-					class="rounded border px-2 py-1 text-sm hover:bg-gray-100"
-				>
-					DOWN</button
-				>
-				{#if files.length > 1 && thumbnails[thumbnailKey(file.id, 1)]}
-					<img
-						src={thumbnails[thumbnailKey(file.id, 1)]}
-						alt={`Miniature page 1 - ${file.name}`}
-						class="mt-2 h-24 w-auto rounded border"
-					/>
-				{/if}
-				{#if files.length === 1}
-					<ul>
-						{#each Array.from({ length: file.nbPages }, (_, i) => i + 1) as pageNumber (pageNumber)}
-							<li>
-								Page {pageNumber}
-								{#if thumbnails[thumbnailKey(file.id, pageNumber)]}
-									<img
-										src={thumbnails[thumbnailKey(file.id, pageNumber)]}
-										alt={`Miniature page ${pageNumber}`}
-										class="mt-2 h-24 w-auto rounded border"
-									/>
-								{/if}
+	{#if files.length > 0}
+		<section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+			{#if files.length === 1}
+				<h2 class="mb-3 text-lg font-semibold text-slate-900">Fichier chargé</h2>
+			{:else}
+				<h2 class="mb-3 text-lg font-semibold text-slate-900">Fichiers chargés</h2>
+			{/if}
 
-								{#if selectedPages.some((p) => p.pageNumber === pageNumber)}
+			<ul class="space-y-3">
+				{#each files as file (file.id)}
+					<li
+						animate:flip={{ duration: 220, easing: cubicOut }}
+						class="rounded-xl border border-slate-200 p-3"
+					>
+						<div class="flex flex-wrap items-center justify-between gap-2">
+							<div>
+								<p class="font-semibold text-slate-900">{file.name}</p>
+								<p class="text-sm text-slate-600">
+									{formatBytes(file.size)} - {file.nbPages} page(s)
+								</p>
+							</div>
+							<div class="flex flex-wrap gap-2">
+								{#if files.length === 1}
 									<button
 										type="button"
-										class="rounded border px-2 py-1 text-sm hover:bg-gray-100"
-										onclick={() => selectPage(pageNumber)}>SELECTED</button
-									>
-								{:else}
-									<button
-										type="button"
-										class="rounded border px-2 py-1 text-sm hover:bg-gray-100"
-										onclick={() => selectPage(pageNumber)}>SELECT</button
+										onclick={selectAllPages}
+										aria-label="Selectionner toutes les pages"
+										class="rounded-md border border-slate-300 px-2 py-1 text-sm font-medium text-slate-700 hover:cursor-pointer hover:bg-slate-100"
+										>Tout selectionner</button
 									>
 								{/if}
-							</li>
-						{/each}
-					</ul>
-				{/if}
-			</li>
-		{/each}
-	</ul>
-{:else}
-	<p>Aucun fichier pour le moment.</p>
-{/if}
-<p>Nb fichiers: {files.length}</p>
-<button
-	type="button"
-	class="rounded border px-2 py-1 text-sm hover:bg-gray-100"
-	onclick={selectPdfFiles}>AJOUTER PDF</button
->
+								<button
+									type="button"
+									onclick={() => removeFile(file.id)}
+									aria-label={`Supprimer ${file.name}`}
+									class="rounded-md border border-rose-300 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700 transition hover:cursor-pointer hover:bg-rose-100"
+								>
+									Supprimer
+								</button>
+								<button
+									type="button"
+									onclick={() => moveFile(file.id, -1)}
+									aria-label={`Monter ${file.name}`}
+									hidden={files[0]?.id === file.id}
+									class="rounded-md border border-slate-300 px-2 py-1 text-sm font-medium text-slate-700 hover:cursor-pointer hover:bg-slate-100"
+								>
+									&uarr;
+								</button>
+								<button
+									type="button"
+									onclick={() => moveFile(file.id, 1)}
+									aria-label={`Descendre ${file.name}`}
+									hidden={files[files.length - 1]?.id === file.id}
+									class="rounded-md border border-slate-300 px-2 py-1 text-sm font-medium text-slate-700 hover:cursor-pointer hover:bg-slate-100"
+								>
+									&darr;
+								</button>
+							</div>
+						</div>
+
+						{#if files.length > 1 && thumbnails[thumbnailKey(file.id, 1)]}
+							<img
+								src={thumbnails[thumbnailKey(file.id, 1)]}
+								alt={`Miniature page 1 - ${file.name}`}
+								class="mt-3 h-24 w-auto rounded-md border border-slate-200"
+							/>
+						{/if}
+
+						{#if files.length === 1}
+							<ul class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+								{#each Array.from({ length: file.nbPages }, (_, i) => i + 1) as pageNumber (pageNumber)}
+									<li class="rounded-lg border border-slate-200 p-2">
+										<div class="mb-2 flex items-center justify-between">
+											<p class="text-sm font-medium text-slate-800">Page {pageNumber}</p>
+											{#if selectedPages.some((p) => p.pageNumber === pageNumber)}
+												<button
+													type="button"
+													class="rounded-md border border-emerald-400 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 hover:cursor-pointer"
+													onclick={() => selectPage(pageNumber)}
+												>
+													Sélectionnée
+												</button>
+											{:else}
+												<button
+													type="button"
+													class="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:cursor-pointer hover:bg-slate-100"
+													onclick={() => selectPage(pageNumber)}
+												>
+													Sélectionner
+												</button>
+											{/if}
+										</div>
+										{#if thumbnails[thumbnailKey(file.id, pageNumber)]}
+											<img
+												src={thumbnails[thumbnailKey(file.id, pageNumber)]}
+												alt={`Miniature page ${pageNumber}`}
+												class="h-24 w-auto rounded-md border border-slate-200"
+											/>
+										{/if}
+									</li>
+								{/each}
+							</ul>
+						{/if}
+					</li>
+				{/each}
+			</ul>
+		</section>
+	{/if}
+</main>
