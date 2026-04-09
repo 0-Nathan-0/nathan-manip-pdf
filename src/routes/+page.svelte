@@ -521,7 +521,7 @@
 											type="button"
 											disabled
 											aria-label="Toutes les pages sont sélectionnées"
-											class="rounded-md border border-emerald-400 bg-emerald-50 px-2 py-1 text-sm font-medium text-emerald-700 cursor-not-allowed"
+											class="cursor-not-allowed rounded-md border border-emerald-400 bg-emerald-50 px-2 py-1 text-sm font-medium text-emerald-700"
 										>
 											✓ Tout sélectionné
 										</button>
