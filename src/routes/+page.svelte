@@ -225,10 +225,8 @@
 			});
 
 			operationStatus = (result as { message?: string }).message ?? 'Fusion terminée.';
-			clearOperationMessages();
 		} catch (error) {
 			operationError = error instanceof Error ? error.message : String(error);
-			clearOperationMessages();
 		} finally {
 			isMerging = false;
 			clearOperationMessages();
@@ -246,7 +244,7 @@
 		try {
 			const { save } = await import('@tauri-apps/plugin-dialog');
 			const outputPath = await save({
-				defaultPath: 'splitted.pdf',
+				defaultPath: 'modified.pdf',
 				filters: [{ name: 'PDF', extensions: ['pdf'] }]
 			});
 
@@ -406,7 +404,7 @@
 	{#if selectedPages.length > 0}
 		<section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
 			<div class="mb-3 flex items-center justify-between">
-				<h2 class="text-lg font-semibold text-slate-900">Pages sélectionnées pour le split</h2>
+				<h2 class="text-lg font-semibold text-slate-900">Pages sélectionnées</h2>
 				<div class="flex items-center gap-3">
 					<p class="text-sm text-slate-600">{selectedPages.length} page(s)</p>
 					<button

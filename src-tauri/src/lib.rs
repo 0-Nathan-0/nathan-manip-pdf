@@ -180,7 +180,7 @@ fn merge_pdfs(
     Ok(PdfOperationResult {
         ok: true,
         message: format!(
-            "Successfully merged {} PDFs into {}",
+            "PDF fusionné: {} PDFs vers '{}'",
             input_paths.len(),
             output_path
         ),
@@ -291,7 +291,7 @@ fn split_pdf(
     Ok(PdfOperationResult {
         ok: true,
         message: format!(
-            "Successfully extracted {} pages from '{}' into '{}'",
+            "PDF modifié: {} pages de '{}' vers '{}'",
             cleaned_pages.len(),
             input_path,
             output_path
