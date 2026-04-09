@@ -1,4 +1,5 @@
 use lopdf::{Document, Object, ObjectId};
+use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
 
@@ -14,6 +15,17 @@ struct PdfPageCountResult {
     ok: bool,
     message: String,
     page_count: usize,
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SelectedSplitPage {
+    page_number: u32,
+    rotation: i32,
+}
+
+fn normalize_rotation(rotation: i32) -> i32 {
+    ((rotation % 360) + 360) % 360
 }
 
 #[tauri::command]
@@ -179,18 +191,24 @@ fn merge_pdfs(
 #[tauri::command]
 fn split_pdf(
     input_path: String,
-    selected_pages: Vec<u32>,
+    selected_pages: Vec<SelectedSplitPage>,
     output_path: String,
 ) -> Result<PdfOperationResult, String> {
     if selected_pages.is_empty() {
         return Err("No pages selected".to_string());
     }
 
-    let mut cleaned_pages: Vec<u32> = Vec::new();
+    let mut cleaned_pages: Vec<SelectedSplitPage> = Vec::new();
 
     for page in selected_pages {
-        if !cleaned_pages.contains(&page) {
-            cleaned_pages.push(page);
+        if !cleaned_pages
+            .iter()
+            .any(|existing| existing.page_number == page.page_number)
+        {
+            cleaned_pages.push(SelectedSplitPage {
+                page_number: page.page_number,
+                rotation: normalize_rotation(page.rotation),
+            });
         }
     }
 
@@ -204,22 +222,40 @@ fn split_pdf(
     }
 
     for page in &cleaned_pages {
-        if !page_numbers.contains(page) {
-            return Err(format!("Selected page {} does not exist in the PDF", page));
+        if !page_numbers.contains(&page.page_number) {
+            return Err(format!(
+                "Selected page {} does not exist in the PDF",
+                page.page_number
+            ));
         }
     }
 
     let selected_page_ids: Vec<ObjectId> = cleaned_pages
         .iter()
-        .map(|page_number| {
+        .map(|page| {
             page_map
-                .get(page_number)
+                .get(&page.page_number)
                 .copied()
-                .ok_or_else(|| format!("Selected page {} does not exist in the PDF", page_number))
+                .ok_or_else(|| {
+                    format!("Selected page {} does not exist in the PDF", page.page_number)
+                })
         })
         .collect::<Result<_, _>>()?;
 
     let mut split_doc = source.clone();
+
+    for page in &cleaned_pages {
+        let page_id = page_map
+            .get(&page.page_number)
+            .copied()
+            .ok_or_else(|| format!("Selected page {} does not exist in the PDF", page.page_number))?;
+
+        let page_dictionary = split_doc
+            .get_dictionary_mut(page_id)
+            .map_err(|err| format!("Failed to update page {}: {}", page.page_number, err))?;
+
+        page_dictionary.set("Rotate", page.rotation as i64);
+    }
 
     let pages_object_id = split_doc
         .catalog()

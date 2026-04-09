@@ -15,13 +15,43 @@
 		rotation: number;
 	};
 
-	let files = $state<PdfFile[]>([]);
+	let files = $state<PdfFile[]>([
+		// {
+		// 	id: crypto.randomUUID(),
+		// 	name: 'contrat-client.pdf',
+		// 	size: 248512,
+		// 	path: 'mock://contrat-client.pdf',
+		// 	nbPages: 3
+		// },
+		// {
+		// 	id: crypto.randomUUID(),
+		// 	name: 'facture-avril.pdf',
+		// 	size: 104320,
+		// 	path: 'mock://facture-avril.pdf',
+		// 	nbPages: 1
+		// },
+		// {
+		// 	id: crypto.randomUUID(),
+		// 	name: 'presentation-projet.pdf',
+		// 	size: 890112,
+		// 	path: 'mock://presentation-projet.pdf',
+		// 	nbPages: 8
+		// },
+		// {
+		// 	id: crypto.randomUUID(),
+		// 	name: 'rapport-2025.pdf',
+		// 	size: 1520430,
+		// 	path: 'mock://rapport-2025.pdf',
+		// 	nbPages: 12
+		// }
+	]);
 	let operationStatus = $state<string | null>(null);
 	let operationError = $state<string | null>(null);
 	let selectedPages = $state<Page[]>([]);
 	let isMerging = $state(false);
 	let isSplitting = $state(false);
 	let thumbnails = $state<Record<string, string>>({});
+	let isMock = $state(false);
 
 	function thumbnailKey(fileId: string, pageNumber: number) {
 		return `${fileId}:${pageNumber}`;
@@ -29,47 +59,77 @@
 
 	async function renderPagesForFile(file: PdfFile, pageNumbers: number[]) {
 		if (!browser) return;
-
-		try {
-			const pdfjs = await import('pdfjs-dist');
-			const pdfWorker = await import('pdfjs-dist/build/pdf.worker.min.mjs?url');
-			const { readFile } = await import('@tauri-apps/plugin-fs');
-			pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker.default;
-
-			const fileData = await readFile(file.path);
-			const pdfData = fileData instanceof Uint8Array ? fileData : new Uint8Array(fileData);
-			const pdfDoc = await pdfjs.getDocument({ data: pdfData }).promise;
+		if (isMock) {
 			const nextThumbnails: Record<string, string> = {};
 
 			for (const pageNumber of pageNumbers) {
-				try {
-					const page = await pdfDoc.getPage(pageNumber);
-					const canvas = document.createElement('canvas');
-					const context = canvas.getContext('2d');
-					if (!context) continue;
+				const canvas = document.createElement('canvas');
+				canvas.width = 220;
+				canvas.height = 300;
 
-					const viewport = page.getViewport({ scale: 0.35 });
-					canvas.width = Math.floor(viewport.width);
-					canvas.height = Math.floor(viewport.height);
+				const context = canvas.getContext('2d');
+				if (!context) continue;
 
-					await page.render({
-						canvasContext: context,
-						viewport,
-						canvas
-					}).promise;
+				context.fillStyle = '#ffffff';
+				context.fillRect(0, 0, canvas.width, canvas.height);
 
-					nextThumbnails[thumbnailKey(file.id, pageNumber)] = canvas.toDataURL('image/png');
-				} catch (pageError) {
-					operationError = pageError instanceof Error ? pageError.message : String(pageError);
-				}
+				context.fillStyle = '#2563eb';
+				context.fillRect(0, 0, canvas.width, 44);
+
+				context.fillStyle = '#ffffff';
+				context.font = 'bold 14px sans-serif';
+				context.fillText(file.name.slice(0, 20), 10, 28);
+
+				context.fillStyle = '#0f172a';
+				context.font = 'bold 28px sans-serif';
+				context.fillText(String(pageNumber), 96, 170);
+
+				nextThumbnails[thumbnailKey(file.id, pageNumber)] = canvas.toDataURL('image/png');
 			}
 
-			thumbnails = {
-				...thumbnails,
-				...nextThumbnails
-			};
-		} catch (error) {
-			operationError = error instanceof Error ? error.message : String(error);
+			thumbnails = { ...thumbnails, ...nextThumbnails };
+		} else {
+			try {
+				const pdfjs = await import('pdfjs-dist');
+				const pdfWorker = await import('pdfjs-dist/build/pdf.worker.min.mjs?url');
+				const { readFile } = await import('@tauri-apps/plugin-fs');
+				pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker.default;
+
+				const fileData = await readFile(file.path);
+				const pdfData = fileData instanceof Uint8Array ? fileData : new Uint8Array(fileData);
+				const pdfDoc = await pdfjs.getDocument({ data: pdfData }).promise;
+				const nextThumbnails: Record<string, string> = {};
+
+				for (const pageNumber of pageNumbers) {
+					try {
+						const page = await pdfDoc.getPage(pageNumber);
+						const canvas = document.createElement('canvas');
+						const context = canvas.getContext('2d');
+						if (!context) continue;
+
+						const viewport = page.getViewport({ scale: 0.35 });
+						canvas.width = Math.floor(viewport.width);
+						canvas.height = Math.floor(viewport.height);
+
+						await page.render({
+							canvasContext: context,
+							viewport,
+							canvas
+						}).promise;
+
+						nextThumbnails[thumbnailKey(file.id, pageNumber)] = canvas.toDataURL('image/png');
+					} catch (pageError) {
+						operationError = pageError instanceof Error ? pageError.message : String(pageError);
+					}
+				}
+
+				thumbnails = {
+					...thumbnails,
+					...nextThumbnails
+				};
+			} catch (error) {
+				operationError = error instanceof Error ? error.message : String(error);
+			}
 		}
 	}
 
@@ -191,7 +251,10 @@
 
 			const result = await invoke('split_pdf', {
 				inputPath: files[0].path,
-				selectedPages: selectedPages.map((page) => page.pageNumber),
+				selectedPages: selectedPages.map((page) => ({
+					pageNumber: page.pageNumber,
+					rotation: normalizeRotation(page.rotation)
+				})),
 				outputPath
 			});
 
@@ -226,6 +289,16 @@
 		selectedPages = [...selectedPages];
 	}
 
+	function rotatePage(pageNumber: number, angle: -90 | 90) {
+		const index = selectedPages.findIndex((p) => p.pageNumber === pageNumber);
+		if (index < 0) {
+			return;
+		}
+
+		selectedPages[index].rotation = selectedPages[index].rotation + angle;
+		selectedPages = [...selectedPages];
+	}
+
 	function moveFile(id: string, direction: -1 | 1) {
 		const index = files.findIndex((file) => file.id === id);
 		const targetIndex = index + direction;
@@ -235,6 +308,10 @@
 		const [file] = files.splice(index, 1);
 		files.splice(targetIndex, 0, file);
 		files = [...files];
+	}
+
+	function normalizeRotation(rotation: number) {
+		return ((rotation % 360) + 360) % 360;
 	}
 </script>
 
@@ -255,11 +332,11 @@
 	>
 
 	{#if operationStatus}
-		<p>{operationStatus}</p>
+		<p class="text-red-600">{operationStatus}</p>
 	{/if}
 
 	{#if operationError}
-		<p>{operationError}</p>
+		<p class="text-red-600">{operationError}</p>
 	{/if}
 
 	{#if selectedPages.length > 0}
@@ -290,6 +367,30 @@
 					>
 						DOWN
 					</button>
+					<button
+						type="button"
+						onclick={() => rotatePage(page.pageNumber, 90)}
+						class="rounded border px-2 py-1 text-sm hover:bg-gray-100">RIGHT</button
+					>
+					<button
+						type="button"
+						onclick={() => rotatePage(page.pageNumber, -90)}
+						class="rounded border px-2 py-1 text-sm hover:bg-gray-100">LEFT</button
+					>
+					{#if thumbnails[thumbnailKey(files[0].id, page.pageNumber)]}
+						<div
+							class="mt-2 flex h-28 w-24 items-center justify-center overflow-hidden rounded border bg-white"
+						>
+							<img
+								src={thumbnails[thumbnailKey(files[0].id, page.pageNumber)]}
+								alt={'Miniature page ' + page.pageNumber}
+								class="h-24 w-auto rounded border"
+								style:transform={'rotate(' + page.rotation + 'deg)'}
+								style:transform-origin="center center"
+								style:transition="transform 180ms ease"
+							/>
+						</div>
+					{/if}
 				</li>
 			{/each}
 		</ul>
