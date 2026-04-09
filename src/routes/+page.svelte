@@ -261,7 +261,7 @@
 				outputPath
 			});
 
-			operationStatus = (result as { message?: string }).message ?? 'Split terminé.';
+			operationStatus = (result as { message?: string }).message ?? 'Modification terminée.';
 		} catch (error) {
 			operationError = error instanceof Error ? error.message : String(error);
 		} finally {
@@ -371,7 +371,7 @@
 					class="rounded-md border border-blue-600 bg-blue-600 px-3 py-2 text-sm font-medium text-white transition hover:cursor-pointer hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
 					onclick={runSplitPdf}
 				>
-					{isSplitting ? 'Split en cours...' : 'Modifier le fichier'}
+					{isSplitting ? 'Modification en cours...' : 'Modifier'}
 				</button>
 			</div>
 		</div>
