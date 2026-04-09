@@ -54,55 +54,9 @@
 	let isSplitting = $state(false);
 	let thumbnails = $state<Record<string, string>>({});
 	let isMock = $state(false);
-	let isDraggingFiles = $state(false);
-	let pageRangeInput = $state('');
-	let thumbnailProgressTotal = $state(0);
-	let thumbnailProgressDone = $state(0);
 
 	function thumbnailKey(fileId: string, pageNumber: number) {
 		return `${fileId}:${pageNumber}`;
-	}
-
-	function incrementThumbnailProgress() {
-		if (thumbnailProgressTotal === 0) return;
-		thumbnailProgressDone = Math.min(thumbnailProgressDone + 1, thumbnailProgressTotal);
-	}
-
-	async function addPdfPaths(paths: string[]) {
-		if (paths.length === 0) return;
-
-		const { stat } = await import('@tauri-apps/plugin-fs');
-
-		const newFiles: PdfFile[] = await Promise.all(
-			paths.map(async (path) => {
-				const normalized = path.replaceAll('\\', '/');
-				const name = normalized.split('/').pop() ?? 'unknown.pdf';
-
-				const fileInfo = await stat(path);
-				const size = typeof fileInfo.size === 'number' ? fileInfo.size : 0;
-				const nbPages = await invoke('get_pdf_page_count', { inputPath: path }).then(
-					(result) => (result as { page_count?: number }).page_count ?? 0
-				);
-
-				return {
-					id: crypto.randomUUID(),
-					name,
-					size,
-					path,
-					nbPages
-				};
-			})
-		);
-
-		const uniqueNewFiles = newFiles.filter(
-			(newFile) => !files.some((existingFile) => existingFile.path === newFile.path)
-		);
-
-		if (uniqueNewFiles.length === 0) return;
-
-		files = [...files, ...uniqueNewFiles];
-		selectedPages = [];
-		await refreshThumbnails(files);
 	}
 
 	async function renderPagesForFile(file: PdfFile, pageNumbers: number[]) {
@@ -133,7 +87,6 @@
 				context.fillText(String(pageNumber), 96, 170);
 
 				nextThumbnails[thumbnailKey(file.id, pageNumber)] = canvas.toDataURL('image/png');
-				incrementThumbnailProgress();
 			}
 
 			thumbnails = { ...thumbnails, ...nextThumbnails };
@@ -167,10 +120,8 @@
 						}).promise;
 
 						nextThumbnails[thumbnailKey(file.id, pageNumber)] = canvas.toDataURL('image/png');
-						incrementThumbnailProgress();
 					} catch (pageError) {
 						operationError = pageError instanceof Error ? pageError.message : String(pageError);
-						incrementThumbnailProgress();
 					}
 				}
 
@@ -186,20 +137,15 @@
 
 	async function refreshThumbnails(currentFiles: PdfFile[]) {
 		thumbnails = {};
-		thumbnailProgressDone = 0;
-		thumbnailProgressTotal = 0;
 
 		if (currentFiles.length === 0) return;
 
 		if (currentFiles.length === 1) {
 			const file = currentFiles[0];
 			const pages = Array.from({ length: file.nbPages }, (_, i) => i + 1);
-			thumbnailProgressTotal = pages.length;
 			await renderPagesForFile(file, pages);
 			return;
 		}
-
-		thumbnailProgressTotal = currentFiles.length;
 
 		for (const file of currentFiles) {
 			await renderPagesForFile(file, [1]);
@@ -216,6 +162,7 @@
 		if (!browser) return;
 
 		const { open } = await import('@tauri-apps/plugin-dialog');
+		const { stat } = await import('@tauri-apps/plugin-fs');
 
 		const selected = await open({
 			multiple: true,
@@ -225,7 +172,31 @@
 		if (!selected) return;
 
 		const paths = Array.isArray(selected) ? selected : [selected];
-		await addPdfPaths(paths);
+		const newFiles: PdfFile[] = await Promise.all(
+			paths.map(async (path) => {
+				const normalized = path.replaceAll('\\', '/');
+				const name = normalized.split('/').pop() ?? 'unknown.pdf';
+
+				const fileInfo = await stat(path);
+				const size = typeof fileInfo.size === 'number' ? fileInfo.size : 0;
+				const nbPages = await invoke('get_pdf_page_count', { inputPath: path }).then(
+					(result) => (result as { page_count?: number }).page_count ?? 0
+				);
+				return {
+					id: crypto.randomUUID(),
+					name,
+					size,
+					path,
+					nbPages
+				};
+			})
+		);
+		const uniqueNewFiles = newFiles.filter(
+			(newFile) => !files.some((existingFile) => existingFile.path === newFile.path)
+		);
+		files = [...files, ...uniqueNewFiles];
+		selectedPages = [];
+		await refreshThumbnails(files);
 	}
 
 	async function runMergePdfs() {
@@ -306,99 +277,6 @@
 		}, 4000);
 	}
 
-	function selectPageRange() {
-		if (files.length !== 1) return;
-
-		const input = pageRangeInput.trim();
-		if (!input) return;
-
-		const max = files[0].nbPages;
-		const tokens = input
-			.split(',')
-			.map((token) => token.trim())
-			.filter(Boolean);
-
-		const pagesToAdd: number[] = [];
-
-		function addPageIfMissing(pageNumber: number) {
-			if (!pagesToAdd.includes(pageNumber)) {
-				pagesToAdd.push(pageNumber);
-			}
-		}
-
-		for (const token of tokens) {
-			if (token.includes('-')) {
-				const [startRaw, endRaw] = token.split('-').map((part) => Number(part.trim()));
-
-				if (!Number.isInteger(startRaw) || !Number.isInteger(endRaw)) {
-					operationError = `Plage invalide: ${token}`;
-					clearOperationMessages();
-					return;
-				}
-
-				const start = Math.min(startRaw, endRaw);
-				const end = Math.max(startRaw, endRaw);
-
-				if (start < 1 || end > max) {
-					operationError = `La plage ${token} est hors limites (1-${max}).`;
-					clearOperationMessages();
-					return;
-				}
-
-				for (let page = start; page <= end; page++) {
-					addPageIfMissing(page);
-				}
-			} else {
-				const page = Number(token);
-				if (!Number.isInteger(page) || page < 1 || page > max) {
-					operationError = `Page invalide: ${token} (1-${max}).`;
-					clearOperationMessages();
-					return;
-				}
-				addPageIfMissing(page);
-			}
-		}
-
-		const newPages = pagesToAdd
-			.filter((pageNumber) => !selectedPages.some((p) => p.pageNumber === pageNumber))
-			.sort((a, b) => a - b)
-			.map((pageNumber) => ({ pageNumber, rotation: 0 }));
-
-		selectedPages = [...selectedPages, ...newPages];
-		operationError = null;
-		pageRangeInput = '';
-	}
-
-	function handleDragOver(event: DragEvent) {
-		event.preventDefault();
-		isDraggingFiles = true;
-	}
-
-	function handleDragLeave(event: DragEvent) {
-		event.preventDefault();
-		isDraggingFiles = false;
-	}
-
-	async function handleDrop(event: DragEvent) {
-		event.preventDefault();
-		isDraggingFiles = false;
-
-		if (!browser) return;
-
-		const droppedFiles = Array.from(event.dataTransfer?.files ?? []);
-		const droppedPaths = droppedFiles
-			.map((file) => (file as File & { path?: string }).path)
-			.filter((path): path is string => Boolean(path && path.toLowerCase().endsWith('.pdf')));
-
-		if (droppedPaths.length === 0) {
-			operationError = 'Aucun PDF valide detecte dans le depot.';
-			clearOperationMessages();
-			return;
-		}
-
-		await addPdfPaths(droppedPaths);
-	}
-
 	function selectPage(pageNumber: number) {
 		const alreadySelected = selectedPages.some((p) => p.pageNumber === pageNumber);
 
@@ -464,12 +342,7 @@
 	}
 </script>
 
-<main
-	class={`mx-auto max-w-6xl space-y-6 rounded-2xl p-6 transition ${isDraggingFiles ? 'bg-emerald-50/60 ring-2 ring-emerald-300' : ''}`}
-	ondragover={handleDragOver}
-	ondragleave={handleDragLeave}
-	ondrop={handleDrop}
->
+<main class="mx-auto max-w-6xl space-y-6 p-6">
 	<header class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
 		<div class="flex flex-wrap items-center justify-between gap-3">
 			<div>
@@ -516,20 +389,6 @@
 				{operationError}
 			</p>
 		{/if}
-
-		{#if thumbnailProgressTotal > 0 && thumbnailProgressDone < thumbnailProgressTotal}
-			<div class="mt-3 space-y-1">
-				<p class="text-xs text-slate-600">
-					Generation des miniatures: {thumbnailProgressDone}/{thumbnailProgressTotal}
-				</p>
-				<div class="h-2 w-full overflow-hidden rounded-full bg-slate-200">
-					<div
-						class="h-full rounded-full bg-emerald-500 transition-all duration-300"
-						style:width={`${(thumbnailProgressDone / thumbnailProgressTotal) * 100}%`}
-					></div>
-				</div>
-			</div>
-		{/if}
 	</header>
 
 	{#if files.length === 0}
@@ -539,7 +398,6 @@
 			class="w-full rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center hover:cursor-pointer hover:bg-slate-100"
 		>
 			<p class="text-slate-700">Aucun fichier chargé pour le moment.</p>
-			<p class="mt-2 text-sm text-slate-500">Clique ou glisse-depose tes PDF ici.</p>
 		</button>
 	{/if}
 
@@ -656,20 +514,6 @@
 							</div>
 							<div class="flex flex-wrap gap-2">
 								{#if files.length === 1}
-									<input
-										type="text"
-										bind:value={pageRangeInput}
-										placeholder="Ex: 1-3, 6, 9-11"
-										class="w-40 rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-700 focus:border-emerald-500 focus:outline-none"
-									/>
-									<button
-										type="button"
-										onclick={selectPageRange}
-										aria-label="Selectionner une plage de pages"
-										class="rounded-md border border-slate-300 px-2 py-1 text-sm font-medium text-slate-700 hover:cursor-pointer hover:bg-slate-100"
-									>
-										Ajouter plage
-									</button>
 									{#if selectedPages.length === file.nbPages}
 										<button
 											type="button"
