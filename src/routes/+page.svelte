@@ -346,7 +346,7 @@
 	<header class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
 		<div class="flex flex-wrap items-center justify-between gap-3">
 			<div>
-				<h1 class="text-xl font-semibold text-slate-900">Bienvenu sur NMPDF</h1>
+				<h1 class="text-xl font-semibold text-slate-900">Bienvenu sur Tännforsen PDF (TPDF)</h1>
 				<p class="text-sm text-slate-600">{files.length} fichier(s) chargé(s)</p>
 			</div>
 			<div class="flex flex-wrap gap-2">

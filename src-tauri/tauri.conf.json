@@ -12,7 +12,7 @@
 	"app": {
 		"windows": [
 			{
-				"title": "Nathan Manip PDF (NMPDF)",
+				"title": "Tännforsen PDF (TPDF)",
 				"width": 800,
 				"height": 600,
 				"resizable": true,
